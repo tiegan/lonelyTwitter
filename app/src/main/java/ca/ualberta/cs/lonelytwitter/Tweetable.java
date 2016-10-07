@@ -1,10 +1,10 @@
 package ca.ualberta.cs.lonelytwitter;
 
-
 import java.util.Date;
 
 /**
- * Created by watts1 on 9/15/16.
+ * An interface implemented in Tweet, makes sure the class has a method to get
+ * the message and a method to get the date.
  */
 public interface Tweetable {
     public String getMessage();
