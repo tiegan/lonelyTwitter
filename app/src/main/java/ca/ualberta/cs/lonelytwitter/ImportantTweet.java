@@ -1,8 +1,5 @@
 package ca.ualberta.cs.lonelytwitter;
 
-/**
- * A subclass of Tweet.
- */
 public class ImportantTweet extends Tweet{
 
     /**
