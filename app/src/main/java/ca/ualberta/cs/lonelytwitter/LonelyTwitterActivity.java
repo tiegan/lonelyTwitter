@@ -1,20 +1,12 @@
 package ca.ualberta.cs.lonelytwitter;
 
-import java.io.BufferedReader;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.lang.reflect.Type;
+//Fix 3 (removing unused imports)
 import java.util.ArrayList;
-import java.util.Date;
 
 import android.app.Activity;
-import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -22,18 +14,36 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ListView;
 
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
+/**
+ * All fixes:
+ * Fix 1: Removed "Public" from getMessage and getDate in interface Tweetable
+ * Why? Because they were redundant.
+ *
+ * Fix 2: Removed "saveInFile" and "loadFromFile" from LonelyTwitterActivity
+ * Why? Because they were no longer being used.
+ *
+ * Fix 3: Removed unused imports
+ * Why? Because they weren't being used.
+ *
+ * Fix 4: Removed all default file templates from ElasticsearchTweetController, TweetList and LonelyTwitterActivityTest
+ * Why? Because there's no reason to have the default file templates in there.
+ *
+ * Fix 5: Added "final" modifiers to LonelyTwitterActivity activity and TweetList tweets.
+ * Why? Because it suggested they could be made final.
+ *
+ * Fix 6: Changed ElasticsearchTweetController method verifySettings() to private.
+ * Why? ElasticsearchTweetController should be the only class calling verifySettings().
+ */
 
 public class LonelyTwitterActivity extends Activity {
 
-	private Activity activity = this;
+	private final Activity activity = this; // Fix 5
 
 	private static final String FILENAME = "file.sav";
 	private EditText bodyText;
 	private ListView oldTweetsList;
-	private ArrayList<Tweet> tweetList = new ArrayList<Tweet>();
-	private ArrayAdapter<Tweet> adapter;
+	private ArrayList<NormalTweet> tweetList = new ArrayList<NormalTweet>();
+	private ArrayAdapter<NormalTweet> adapter;
 
 	public ListView getOldTweetsList(){
 		return oldTweetsList;
@@ -47,7 +57,7 @@ public class LonelyTwitterActivity extends Activity {
 
 		bodyText = (EditText) findViewById(R.id.body);
 		Button saveButton = (Button) findViewById(R.id.save);
-		Button clearButton = (Button) findViewById(R.id.clear);
+		Button searchButton = (Button) findViewById(R.id.search);
 		oldTweetsList = (ListView) findViewById(R.id.oldTweetsList);
 
 		saveButton.setOnClickListener(new View.OnClickListener() {
@@ -55,20 +65,43 @@ public class LonelyTwitterActivity extends Activity {
 			public void onClick(View v) {
 				setResult(RESULT_OK);
 				String text = bodyText.getText().toString();
-				Tweet newTweet = new NormalTweet(text);
+				NormalTweet newTweet = new NormalTweet(text);
 				tweetList.add(newTweet);
 				adapter.notifyDataSetChanged();
-				saveInFile(); // TODO replace this with elastic search
+
+				//Lab 7.
+				// saveInFile(); // TODO replace this with elastic search
+				ElasticsearchTweetController.AddTweetsTask addTweetsTasks =
+						new ElasticsearchTweetController.AddTweetsTask();
+				addTweetsTasks.execute(newTweet);
 			}
 		});
 
-		clearButton.setOnClickListener(new View.OnClickListener() {
-
+		// Newly implemented button, borrows the first half of what it does from
+		// the save button (with GetTweetsTask substituted for AddTweetsTask).
+		searchButton.setOnClickListener(new View.OnClickListener() {
 			public void onClick(View v) {
 				setResult(RESULT_OK);
-				tweetList.clear();
-				deleteFile(FILENAME);  // TODO deprecate this button
-				adapter.notifyDataSetChanged();
+				String text = bodyText.getText().toString();
+
+				ElasticsearchTweetController.GetTweetsTask getTweetsTask =
+						new ElasticsearchTweetController.GetTweetsTask();
+				getTweetsTask.execute(text);
+
+				// Turns out just setting tweetList = getTweetsTask.get() just makes
+				// the adapter hate you and stop actually looking at tweetList, requiring
+				// the need for clearing the tweetList then adding in each NormalTweet
+				// object to keep the adapter happy. Who knew? (I do now!)
+				try {
+					ArrayList<NormalTweet> temp = getTweetsTask.get();
+					tweetList.clear();
+					for(int i = 0; i < temp.size(); ++i) {
+						tweetList.add(temp.get(i));
+					}
+					adapter.notifyDataSetChanged();
+				} catch (Exception e) {
+					Log.i("Error", "The request for tweets failed in Search Button click.");
+				}
 			}
 		});
 
@@ -89,45 +122,22 @@ public class LonelyTwitterActivity extends Activity {
 	protected void onStart() {
 		// TODO Auto-generated method stub
 		super.onStart();
-		loadFromFile(); // TODO replace this with elastic search
-		adapter = new ArrayAdapter<Tweet>(this,
+
+		//loadFromFile(); // TODO replace this with elastic search
+		ElasticsearchTweetController.GetTweetsTask getTweetsTask =
+				new ElasticsearchTweetController.GetTweetsTask();
+		getTweetsTask.execute("");
+
+		try {
+			tweetList = getTweetsTask.get();
+		} catch (Exception e) {
+			Log.i("Error", "The request for tweets failed in onStart.");
+		}
+
+		adapter = new ArrayAdapter<NormalTweet>(this,
 				R.layout.list_item, tweetList);
 		oldTweetsList.setAdapter(adapter);
 	}
 
-
-	private void loadFromFile() {
-		try {
-			FileInputStream fis = openFileInput(FILENAME);
-			BufferedReader in = new BufferedReader(new InputStreamReader(fis));
-			Gson gson = new Gson();
-			//Code taken from http://stackoverflow.com/questions/12384064/gson-convert-from-json-to-a-typed-arraylistt Sept.22,2016
-			Type listType = new TypeToken<ArrayList<NormalTweet>>(){}.getType();
-			tweetList = gson.fromJson(in, listType);
-		} catch (FileNotFoundException e) {
-			// TODO Auto-generated catch block
-			tweetList = new ArrayList<Tweet>();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			throw new RuntimeException();
-		}
-	}
-
-
-	private void saveInFile() {
-		try {
-
-			FileOutputStream fos = openFileOutput(FILENAME,0);
-			OutputStreamWriter writer = new OutputStreamWriter(fos);
-			Gson gson = new Gson();
-			gson.toJson(tweetList, writer);
-			writer.flush();
-		} catch (FileNotFoundException e) {
-			// TODO Auto-generated catch block
-			throw new RuntimeException();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			throw new RuntimeException();
-		}
-	}
+	// Fix 2 (saveInFile and loadFromFile were here)
 }
